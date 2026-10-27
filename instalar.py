@@ -1,6 +1,7 @@
 import os
 import asyncio
 import re
+import traceback
 import discord
 
 GUILD_ID = 1246627128074567680
@@ -27,10 +28,14 @@ class Setup(discord.Client):
  def __init__(self):
   super().__init__(intents=discord.Intents(guilds=True))
   self.done=False
+  self.failed=False
  async def on_ready(self):
   if self.done:return
   self.done=True
   try: await self.configure()
+  except Exception:
+   self.failed=True
+   traceback.print_exc()
   finally: await self.close()
  async def configure(self):
   guild=self.get_guild(GUILD_ID)
@@ -88,4 +93,7 @@ class Setup(discord.Client):
     await asyncio.sleep(0.4)
   print("Concluído: 7 categorias, 26 canais previstos e 7 cargos. Nenhuma mensagem apagada.",flush=True)
 if not TOKEN: raise SystemExit("Crie o segredo DISCORD_BOT_TOKEN no GitHub Actions.")
-Setup().run(TOKEN)
+app=Setup()
+app.run(TOKEN)
+if app.failed:
+ raise SystemExit('FALHA: instalação incompleta — verifique o traceback acima.')
