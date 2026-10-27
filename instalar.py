@@ -76,10 +76,6 @@ class Setup(discord.Client):
  async def setup_category(self,guild,member,roles,title,items,problems):
    private="ADMINISTRAÇÃO" in title
    category=discord.utils.get(guild.categories,name=title)
-   if category is None and title.endswith("INFORMAÇÕES"):
-    category=next((c for c in guild.categories if "boas-vindas" in c.name.casefold() and "informa" in c.name.casefold()),None)
-    if category:
-     await category.edit(name=title,reason="Reaproveitar categoria existente")
    if category is None:
     perms={}
     if private:
@@ -89,11 +85,7 @@ class Setup(discord.Client):
       perms[roles[role_name]]=discord.PermissionOverwrite(view_channel=True)
     category=await guild.create_category(title,overwrites=perms,reason="Instalação ALUNOS DEV-CLUB")
    print("CATEGORIA PRONTA", title, flush=True)
-   if private:
-    await category.set_permissions(guild.default_role,view_channel=False)
-    await category.set_permissions(member,view_channel=True)
-    for role_name in ["『👑』➤ Fundador","『🛡️』➤ Administrador","『🔧』➤ Moderador"]:
-     await category.set_permissions(roles[role_name],view_channel=True)
+   # Não reaplicar permissões de categoria existente: PATCH causou rate limit.
    for item in items:
     try:
      print("INICIANDO CANAL",title,item,flush=True)
@@ -113,14 +105,15 @@ class Setup(discord.Client):
    choices={canonical(a) for a in aliases}
    existing=next((c for c in guild.channels if isinstance(c,kind) and (canonical(c.name) in choices or any(canonical(c.name).endswith("-"+x) for x in choices))),None)
   if existing:
-   if existing.category_id!=category.id or existing.name!=desired:
-    await existing.edit(name=desired,category=category,sync_permissions=private,reason="Organização de canais")
-   elif private:
-    await existing.edit(sync_permissions=True,reason="Proteção da administração")
-  elif voice:
-   await guild.create_voice_channel(desired,category=category,reason="Instalação ALUNOS DEV-CLUB")
+   # Somente leitura para canais existentes; preservar permissões e histórico.
+   print("EXISTENTE — sem alterar:",existing.name,"ID",existing.id,flush=True)
+   return
+  if private and category.overwrites_for(guild.default_role).view_channel is not False:
+   raise RuntimeError("Categoria administrativa sem bloqueio de visualização; operação cancelada por segurança.")
+  if voice:
+   await guild.create_voice_channel(desired,category=category,reason="Criar sala faltante ALUNOS DEV-CLUB")
   else:
-   await guild.create_text_channel(desired,category=category,reason="Instalação ALUNOS DEV-CLUB")
+   await guild.create_text_channel(desired,category=category,reason="Criar canal faltante ALUNOS DEV-CLUB")
   print("OK",desired,flush=True)
   await asyncio.sleep(0.4)
 if not TOKEN: raise SystemExit("Crie o segredo DISCORD_BOT_TOKEN no GitHub Actions.")
