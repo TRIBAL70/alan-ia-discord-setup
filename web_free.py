@@ -1,4 +1,6 @@
-"""Render free web service for Alan IA. Free instances may sleep on inactivity."""
+"""Render free web service for Alan IA. Free instances may sleep on inactivity.
+Redeploy to apply Render environment-group configuration.
+"""
 import asyncio
 import logging
 import os
