@@ -57,13 +57,14 @@ class Setup(discord.Client):
   roles={}
   problems=[]
   for name,colour in ROLES:
+   print("CARGO",name,flush=True)
    role=discord.utils.get(guild.roles,name=name)
    if role is None:
     role=await guild.create_role(name=name,colour=discord.Colour(colour),permissions=discord.Permissions.none(),reason="Instalação ALUNOS DEV-CLUB")
    roles[name]=role
   for title,items in GROUPS:
    try:
-    await self.setup_category(guild,member,roles,title,items,problems)
+    await asyncio.wait_for(self.setup_category(guild,member,roles,title,items,problems),timeout=85)
    except Exception as ex:
     problems.append(f"Categoria {title}: {type(ex).__name__}: {ex}")
     print("FALHA CATEGORIA",title,repr(ex),flush=True)
@@ -87,7 +88,7 @@ class Setup(discord.Client):
      for role_name in ["『👑』➤ Fundador","『🛡️』➤ Administrador","『🔧』➤ Moderador"]:
       perms[roles[role_name]]=discord.PermissionOverwrite(view_channel=True)
     category=await guild.create_category(title,overwrites=perms,reason="Instalação ALUNOS DEV-CLUB")
-   print("CATEGORIA", title, flush=True)
+   print("CATEGORIA PRONTA", title, flush=True)
    if private:
     await category.set_permissions(guild.default_role,view_channel=False)
     await category.set_permissions(member,view_channel=True)
@@ -95,7 +96,8 @@ class Setup(discord.Client):
      await category.set_permissions(roles[role_name],view_channel=True)
    for item in items:
     try:
-     await self.setup_channel(guild,category,title,item)
+     print("INICIANDO CANAL",title,item,flush=True)
+     await asyncio.wait_for(self.setup_channel(guild,category,title,item),timeout=35)
     except Exception as ex:
      problems.append(f"Canal {item} / {title}: {type(ex).__name__}: {ex}")
      print("FALHA CANAL",title,item,repr(ex),flush=True)
