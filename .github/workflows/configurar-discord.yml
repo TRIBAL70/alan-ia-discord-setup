@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - '.github/workflows/configurar-discord.yml'
+      - 'instalar.py'
 permissions:
   contents: read
 jobs:
