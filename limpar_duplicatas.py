@@ -88,3 +88,5 @@ if not TOKEN:raise SystemExit("Configure segredo DISCORD_BOT_TOKEN.")
 app=Cleanup()
 app.run(TOKEN)
 if app.failures:raise SystemExit("Limpeza parcial: revisar registros.")
+
+# Reexecução autorizada após habilitar Gerenciar Threads no cargo do bot.
