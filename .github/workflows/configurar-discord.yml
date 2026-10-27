@@ -1,16 +1,15 @@
 name: Configurar servidor Discord
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/configurar-discord.yml'
-      - 'instalar.py'
 permissions:
   contents: read
+concurrency:
+  group: discord-setup-alunos-dev-club
+  cancel-in-progress: false
 jobs:
   instalar:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 8
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -19,6 +18,8 @@ jobs:
       - name: Instalar dependências
         run: pip install -r requirements.txt
       - name: Configurar canais e cargos
+        timeout-minutes: 7
         env:
           DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
-        run: python instalar.py
+          PYTHONUNBUFFERED: "1"
+        run: python -u instalar.py
