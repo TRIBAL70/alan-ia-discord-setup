@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - '.github/workflows/diagnosticar-discord.yml'
+      - 'diagnostico.py'
 permissions:
   contents: read
 jobs:
