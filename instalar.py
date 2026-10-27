@@ -1,5 +1,6 @@
 import os
 import asyncio
+import re
 import discord
 
 GUILD_ID = 1246627128074567680
@@ -20,7 +21,8 @@ ALIASES = {"boas-vindas":["boas-vindas","『❗』boas-vindas"],
  "anúncios":["anúncios","avisos","『❗』avisos"],
  "escolher-cargos":["escolher-cargos","cargos","『❗』cargos"]}
 def canonical(name):
- return name.replace("『","").replace("』","").replace("»","").replace("・","").strip().casefold()
+ clean = re.sub(r"[^\\w\\s-]+", " ", name.casefold())
+ return re.sub(r"\\s+", " ", clean).strip().replace(" ", "-")
 class Setup(discord.Client):
  def __init__(self):
   super().__init__(intents=discord.Intents(guilds=True))
@@ -45,6 +47,10 @@ class Setup(discord.Client):
   for title,items in GROUPS:
    private="ADMINISTRAÇÃO" in title
    category=discord.utils.get(guild.categories,name=title)
+   if category is None and title.endswith("INFORMAÇÕES"):
+    category=next((c for c in guild.categories if "boas-vindas" in c.name.casefold() and "informa" in c.name.casefold()),None)
+    if category:
+     await category.edit(name=title,reason="Reaproveitar categoria existente")
    if category is None:
     perms={}
     if private:
@@ -53,6 +59,7 @@ class Setup(discord.Client):
      for role_name in ["『👑』➤ Fundador","『🛡️』➤ Administrador","『🔧』➤ Moderador"]:
       perms[roles[role_name]]=discord.PermissionOverwrite(view_channel=True)
     category=await guild.create_category(title,overwrites=perms,reason="Instalação ALUNOS DEV-CLUB")
+   print("CATEGORIA", title, flush=True)
    if private:
     await category.set_permissions(guild.default_role,view_channel=False)
     await category.set_permissions(member,view_channel=True)
@@ -66,7 +73,8 @@ class Setup(discord.Client):
     aliases=[base,*ALIASES.get(base,[])]
     existing=next((c for c in guild.channels if isinstance(c,kind) and c.name==desired),None)
     if existing is None:
-     existing=next((c for c in guild.channels if isinstance(c,kind) and canonical(c.name) in [canonical(a) for a in aliases]),None)
+     choices={canonical(a) for a in aliases}
+     existing=next((c for c in guild.channels if isinstance(c,kind) and (canonical(c.name) in choices or any(canonical(c.name).endswith("-"+x) for x in choices))),None)
     if existing:
      if existing.category_id!=category.id or existing.name!=desired:
       await existing.edit(name=desired,category=category,sync_permissions=private,reason="Organização de canais")
@@ -76,8 +84,8 @@ class Setup(discord.Client):
      await guild.create_voice_channel(desired,category=category,reason="Instalação ALUNOS DEV-CLUB")
     else:
      await guild.create_text_channel(desired,category=category,reason="Instalação ALUNOS DEV-CLUB")
-    print("OK",desired)
+    print("OK",desired,flush=True)
     await asyncio.sleep(0.4)
-  print("Concluído: 7 categorias, 26 canais previstos e 7 cargos. Nenhuma mensagem apagada.")
+  print("Concluído: 7 categorias, 26 canais previstos e 7 cargos. Nenhuma mensagem apagada.",flush=True)
 if not TOKEN: raise SystemExit("Crie o segredo DISCORD_BOT_TOKEN no GitHub Actions.")
 Setup().run(TOKEN)
