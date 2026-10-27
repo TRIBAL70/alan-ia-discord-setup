@@ -1,0 +1,20 @@
+name: Configurar servidor Discord
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  instalar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Instalar dependências
+        run: pip install -r requirements.txt
+      - name: Configurar canais e cargos
+        env:
+          DISCORD_BOT_TOKEN: ${{ secrets.DISCORD_BOT_TOKEN }}
+        run: python instalar.py
