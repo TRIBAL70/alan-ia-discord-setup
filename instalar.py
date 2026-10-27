@@ -18,12 +18,23 @@ GROUPS = [
 ROLES = [("『👑』➤ Fundador",0xF5C542),("『🛡️』➤ Administrador",0xED4245),
  ("『🔧』➤ Moderador",0x5865F2),("『🤖』➤ Bot IA",0x9B59B6),
  ("『💎』➤ VIP",0x00D5FF),("『💻』➤ Desenvolvedor",0x2ECC71),("『👤』➤ Membro",0x95A5A6)]
-ALIASES = {"boas-vindas":["boas-vindas","『❗』boas-vindas"],
- "anúncios":["anúncios","avisos","『❗』avisos"],
- "escolher-cargos":["escolher-cargos","cargos","『❗』cargos"]}
+ALIASES = {
+ "boas-vindas":["boas-vindas"],
+ "regras":["regras"],
+ "anúncios":["avisos","anúncios"],
+ "escolher-cargos":["cargos","escolher-cargos"],
+ "chat-geral":["chat-geral","geral","bate-papo"],
+ "ideias-e-sugestões":["sugestões","ideias-e-sugestões"],
+ "dúvidas":["dúvidas","suporte"],
+ "equipe":["staff-discussão","staff-discussao"],
+ "Bate-papo Tech":["call livre"],
+ "Programando juntos":["geral-1"],
+ "Laboratório de IA":["geral-2"],
+}
 def canonical(name):
  clean = re.sub(r"[^\\w\\s-]+", " ", name.casefold())
  return re.sub(r"\\s+", " ", clean).strip().replace(" ", "-")
+
 class Setup(discord.Client):
  def __init__(self):
   super().__init__(intents=discord.Intents(guilds=True))
