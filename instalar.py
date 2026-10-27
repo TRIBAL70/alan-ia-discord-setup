@@ -103,6 +103,7 @@ class Setup(discord.Client):
   emoji,base=item.split("|",1)
   desired=f"『{emoji}』» {base}"
   voice="SALAS DE VOZ" in title
+  private="ADMINISTRAÇÃO" in title
   kind=discord.VoiceChannel if voice else discord.TextChannel
   aliases=[base,*ALIASES.get(base,[])]
   existing=next((c for c in guild.channels if isinstance(c,kind) and c.name==desired),None)
