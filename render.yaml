@@ -1,0 +1,15 @@
+services:
+  - type: worker
+    name: alan-ia-discord
+    runtime: python
+    plan: 0.5c-512mb
+    region: oregon
+    buildCommand: pip install -r requirements-bot.txt
+    startCommand: python -u bot.py
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.8
+      - key: DISCORD_BOT_TOKEN
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-4.1-mini
