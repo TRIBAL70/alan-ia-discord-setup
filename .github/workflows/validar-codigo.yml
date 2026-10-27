@@ -1,0 +1,25 @@
+name: Validar codigo Alan IA
+on:
+  push:
+    paths:
+      - '**.py'
+      - 'requirements*.txt'
+      - '.github/workflows/validar-codigo.yml'
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  validacao:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verificar sintaxe Python
+        run: python -m compileall -q instalar.py bot.py
+      - name: Validar instalacao das dependencias
+        run: |
+          pip install -r requirements.txt -r requirements-bot.txt
+          python -c "import discord, openai; print('Dependencias OK')"
