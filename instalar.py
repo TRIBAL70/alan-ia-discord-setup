@@ -101,9 +101,7 @@ class Setup(discord.Client):
   kind=discord.VoiceChannel if voice else discord.TextChannel
   aliases=[base,*ALIASES.get(base,[])]
   existing=next((c for c in guild.channels if isinstance(c,kind) and c.name==desired),None)
-  if existing is None:
-   choices={canonical(a) for a in aliases}
-   existing=next((c for c in guild.channels if isinstance(c,kind) and (canonical(c.name) in choices or any(canonical(c.name).endswith("-"+x) for x in choices))),None)
+  # Canais antigos permanecem intactos; cria canal com o nome planejado se faltar.
   if existing:
    # Somente leitura para canais existentes; preservar permissões e histórico.
    print("EXISTENTE — sem alterar:",existing.name,"ID",existing.id,flush=True)
