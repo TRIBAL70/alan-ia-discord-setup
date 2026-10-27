@@ -55,12 +55,24 @@ class Setup(discord.Client):
   if not(member.guild_permissions.manage_channels and member.guild_permissions.manage_roles):
    raise RuntimeError("Bot precisa de Gerenciar Canais e Gerenciar Cargos.")
   roles={}
+  problems=[]
   for name,colour in ROLES:
    role=discord.utils.get(guild.roles,name=name)
    if role is None:
     role=await guild.create_role(name=name,colour=discord.Colour(colour),permissions=discord.Permissions.none(),reason="Instalação ALUNOS DEV-CLUB")
    roles[name]=role
   for title,items in GROUPS:
+   try:
+    await self.setup_category(guild,member,roles,title,items,problems)
+   except Exception as ex:
+    problems.append(f"Categoria {title}: {type(ex).__name__}: {ex}")
+    print("FALHA CATEGORIA",title,repr(ex),flush=True)
+  if problems:
+   print("RESUMO DE FALHAS:",len(problems),flush=True)
+   for entry in problems: print("PENDENTE:",entry,flush=True)
+   raise RuntimeError(f"Instalação parcialmente concluída: {len(problems)} problemas. Consulte os logs.")
+  print("Concluído: 7 categorias, 26 canais previstos e 7 cargos. Nenhuma mensagem apagada.",flush=True)
+ async def setup_category(self,guild,member,roles,title,items,problems):
    private="ADMINISTRAÇÃO" in title
    category=discord.utils.get(guild.categories,name=title)
    if category is None and title.endswith("INFORMAÇÕES"):
@@ -82,27 +94,32 @@ class Setup(discord.Client):
     for role_name in ["『👑』➤ Fundador","『🛡️』➤ Administrador","『🔧』➤ Moderador"]:
      await category.set_permissions(roles[role_name],view_channel=True)
    for item in items:
-    emoji,base=item.split("|",1)
-    desired=f"『{emoji}』» {base}"
-    voice="SALAS DE VOZ" in title
-    kind=discord.VoiceChannel if voice else discord.TextChannel
-    aliases=[base,*ALIASES.get(base,[])]
-    existing=next((c for c in guild.channels if isinstance(c,kind) and c.name==desired),None)
-    if existing is None:
-     choices={canonical(a) for a in aliases}
-     existing=next((c for c in guild.channels if isinstance(c,kind) and (canonical(c.name) in choices or any(canonical(c.name).endswith("-"+x) for x in choices))),None)
-    if existing:
-     if existing.category_id!=category.id or existing.name!=desired:
-      await existing.edit(name=desired,category=category,sync_permissions=private,reason="Organização de canais")
-     elif private:
-      await existing.edit(sync_permissions=True,reason="Proteção da administração")
-    elif voice:
-     await guild.create_voice_channel(desired,category=category,reason="Instalação ALUNOS DEV-CLUB")
-    else:
-     await guild.create_text_channel(desired,category=category,reason="Instalação ALUNOS DEV-CLUB")
-    print("OK",desired,flush=True)
-    await asyncio.sleep(0.4)
-  print("Concluído: 7 categorias, 26 canais previstos e 7 cargos. Nenhuma mensagem apagada.",flush=True)
+    try:
+     await self.setup_channel(guild,category,title,item)
+    except Exception as ex:
+     problems.append(f"Canal {item} / {title}: {type(ex).__name__}: {ex}")
+     print("FALHA CANAL",title,item,repr(ex),flush=True)
+ async def setup_channel(self,guild,category,title,item):
+  emoji,base=item.split("|",1)
+  desired=f"『{emoji}』» {base}"
+  voice="SALAS DE VOZ" in title
+  kind=discord.VoiceChannel if voice else discord.TextChannel
+  aliases=[base,*ALIASES.get(base,[])]
+  existing=next((c for c in guild.channels if isinstance(c,kind) and c.name==desired),None)
+  if existing is None:
+   choices={canonical(a) for a in aliases}
+   existing=next((c for c in guild.channels if isinstance(c,kind) and (canonical(c.name) in choices or any(canonical(c.name).endswith("-"+x) for x in choices))),None)
+  if existing:
+   if existing.category_id!=category.id or existing.name!=desired:
+    await existing.edit(name=desired,category=category,sync_permissions=private,reason="Organização de canais")
+   elif private:
+    await existing.edit(sync_permissions=True,reason="Proteção da administração")
+  elif voice:
+   await guild.create_voice_channel(desired,category=category,reason="Instalação ALUNOS DEV-CLUB")
+  else:
+   await guild.create_text_channel(desired,category=category,reason="Instalação ALUNOS DEV-CLUB")
+  print("OK",desired,flush=True)
+  await asyncio.sleep(0.4)
 if not TOKEN: raise SystemExit("Crie o segredo DISCORD_BOT_TOKEN no GitHub Actions.")
 app=Setup()
 app.run(TOKEN)
