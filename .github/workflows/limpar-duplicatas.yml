@@ -3,6 +3,7 @@ on:
   push:
     paths:
       - '.github/workflows/limpar-duplicatas.yml'
+      - 'limpar_duplicatas.py'
   workflow_dispatch:
 permissions:
   contents: read
