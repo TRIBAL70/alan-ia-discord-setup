@@ -1,6 +1,9 @@
 name: Configurar servidor Discord
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/configurar-discord.yml'
 permissions:
   contents: read
 jobs:
