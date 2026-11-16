@@ -2,7 +2,6 @@
 import os
 import logging
 import re
-import unicodedata
 from urllib.parse import urlsplit
 import discord
 from discord import app_commands
@@ -44,38 +43,29 @@ async def restrict_meeting_summary(server):
     if not isinstance(channel, discord.TextChannel) or not channel.name.endswith("resumo-reunião"):
         raise ValueError("Canal de resumo não confere com o servidor e o nome esperados.")
 
-    role_names = {"moderador", "moderadora", "moderadores", "moderadoras", "moderacao", "moderation", "moderator", "moderators", "mod"}
-    moderators = []
-    for role in server.roles:
-        normalized = unicodedata.normalize("NFKD", role.name).casefold()
-        letters = "".join(char for char in normalized if not unicodedata.combining(char))
-        words = re.findall(r"[a-z]+", letters)
-        if len(words) == 1 and words[0] in role_names and not role.managed:
-            moderators.append(role)
-    if len(moderators) != 1:
-        logging.warning("RESUMO_REUNIAO cargos encontrados: %s",
-                        [(role.id, role.name, role.permissions.manage_messages, role.permissions.administrator)
-                         for role in server.roles if not role.is_default()])
-        raise ValueError("Não foi possível identificar um único cargo de moderação.")
-    moderator = moderators[0]
+    moderator_ids = {1246627128225828956, 1564586719909511189}
+    moderators = [role for role in server.roles if role.id in moderator_ids]
+    if {role.id for role in moderators} != moderator_ids:
+        raise ValueError("Os dois cargos Moderador confirmados não foram encontrados.")
     everyone = server.default_role
     post_fields = ("send_messages", "send_messages_in_threads", "create_public_threads", "create_private_threads")
     before = channel.overwrites
     after = {role: discord.PermissionOverwrite.from_pair(*rule.pair()) for role, rule in before.items()}
     for target, rule in after.items():
-        if target.id not in (moderator.id, everyone.id):
+        if target.id not in moderator_ids and target.id != everyone.id:
             for name in post_fields:
                 if getattr(rule, name) is True:
                     setattr(rule, name, None)
     baseline = after.setdefault(everyone, discord.PermissionOverwrite())
     for name in post_fields:
         setattr(baseline, name, False)
-    mod_rule = after.setdefault(moderator, discord.PermissionOverwrite())
-    previous_mod_permissions = channel.permissions_for(moderator)
-    mod_rule.send_messages = True
-    for name in post_fields[1:]:
-        if getattr(previous_mod_permissions, name):
-            setattr(mod_rule, name, True)
+    for moderator in moderators:
+        mod_rule = after.setdefault(moderator, discord.PermissionOverwrite())
+        previous_mod_permissions = channel.permissions_for(moderator)
+        mod_rule.send_messages = True
+        for name in post_fields[1:]:
+            if getattr(previous_mod_permissions, name):
+                setattr(mod_rule, name, True)
     after = {role: rule for role, rule in after.items() if not rule.is_empty()}
 
     if after != before:
@@ -83,12 +73,12 @@ async def restrict_meeting_summary(server):
     verified = await server.fetch_channel(channel_id)
     expected = verified.overwrites_for(everyone)
     other_allows = any(
-        target.id not in (everyone.id, moderator.id) and any(getattr(rule, name) is True for name in post_fields)
+        target.id not in moderator_ids and target.id != everyone.id and any(getattr(rule, name) is True for name in post_fields)
         for target, rule in verified.overwrites.items()
     )
     if any(getattr(expected, name) is not False for name in post_fields) or other_allows:
         raise ValueError("A restrição do canal não foi confirmada na leitura do Discord.")
-    if not verified.permissions_for(moderator).send_messages:
+    if any(not verified.permissions_for(role).send_messages for role in moderators):
         raise ValueError("O cargo Moderador ainda não consegue postar no canal.")
     visibility_unchanged = all(
         pair.view_channel == verified.overwrites_for(role).view_channel
@@ -97,7 +87,7 @@ async def restrict_meeting_summary(server):
     )
     if not visibility_unchanged:
         raise ValueError("As permissões de leitura não conferem.")
-    logging.info("RESUMO_REUNIAO confirmado: somente Moderador e exceções nativas do Discord; leitura preservada; bot_pode_postar=%s.",
+    logging.info("RESUMO_REUNIAO confirmado: somente os dois cargos Moderador e exceções nativas do Discord; leitura preservada; bot_pode_postar=%s.",
                  verified.permissions_for(server.me).send_messages)
 
 
