@@ -2,6 +2,7 @@
 import os
 import logging
 import re
+import unicodedata
 from urllib.parse import urlsplit
 import discord
 from discord import app_commands
@@ -43,9 +44,19 @@ async def restrict_meeting_summary(server):
     if not isinstance(channel, discord.TextChannel) or not channel.name.endswith("resumo-reunião"):
         raise ValueError("Canal de resumo não confere com o servidor e o nome esperados.")
 
-    moderators = [role for role in server.roles if role.name in ("『🔧』➤ Moderador", "Moderador")]
+    role_names = {"moderador", "moderadora", "moderadores", "moderadoras", "moderacao", "moderation", "moderator", "moderators", "mod"}
+    moderators = []
+    for role in server.roles:
+        normalized = unicodedata.normalize("NFKD", role.name).casefold()
+        letters = "".join(char for char in normalized if not unicodedata.combining(char))
+        words = re.findall(r"[a-z]+", letters)
+        if len(words) == 1 and words[0] in role_names and not role.managed:
+            moderators.append(role)
     if len(moderators) != 1:
-        raise ValueError("Não foi possível identificar um único cargo Moderador.")
+        logging.warning("RESUMO_REUNIAO cargos encontrados: %s",
+                        [(role.id, role.name, role.permissions.manage_messages, role.permissions.administrator)
+                         for role in server.roles if not role.is_default()])
+        raise ValueError("Não foi possível identificar um único cargo de moderação.")
     moderator = moderators[0]
     everyone = server.default_role
     post_fields = ("send_messages", "send_messages_in_threads", "create_public_threads", "create_private_threads")
