@@ -16,6 +16,7 @@ import discord
 from aiohttp import ClientError, ClientSession, ClientTimeout, web
 from bot import GUILD_ID, TOKEN, _IMAGE_SUFFIXES, _RICH_MESSAGE_COLORS, client
 from welcome_cards import generate_member_card, welcome_channel
+from promotion_gif import GifConversionError, video_to_gif
 
 logging.basicConfig(level=logging.INFO)
 async def health(request):
@@ -308,11 +309,17 @@ async def crm_publish(request):
         embed.set_image(url=media_url)
     if media_file:
         raw, filename, is_video = media_file
+        if is_video:
+            try:
+                raw = await video_to_gif(raw, filename)
+            except GifConversionError as error:
+                return crm_error(str(error), 422)
+            except OSError:
+                logging.exception("Não foi possível iniciar a conversão em GIF.")
+                return crm_error("O conversor de GIF está indisponível. Tente novamente.", 503)
+            filename = "promocao.gif"
         args["file"] = discord.File(BytesIO(raw), filename=filename)
-        if is_video and not (title or text):
-            del args["embed"]
-        elif not is_video:
-            embed.set_image(url=f"attachment://{filename}")
+        embed.set_image(url=f"attachment://{filename}")
 
     timeout = 75 if media_file and media_file[2] else 20
     try:
