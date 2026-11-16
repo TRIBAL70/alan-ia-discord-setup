@@ -105,10 +105,43 @@ def can_publish(channel, bot_member, *, attachment=False):
     )
 
 
+CRM_BROWSER_ORIGINS = {
+    "https://alan-alves-crm-comando.lovable.app",
+    "https://id-preview--b55516d9-31ce-45d9-9b08-5607ab6c7484.lovable.app",
+}
+CRM_BROWSER_METHODS = {
+    "/crm/discord/channels": "GET",
+    "/crm/discord/promotions": "POST",
+}
+
+
+async def crm_response_headers(request, response):
+    if request.path in CRM_BROWSER_METHODS:
+        response.headers["Cache-Control"] = "no-store"
+        response.headers.add("Vary", "Origin")
+        origin = request.headers.get("Origin")
+        if origin in CRM_BROWSER_ORIGINS:
+            response.headers["Access-Control-Allow-Origin"] = origin
+
+
 @web.middleware
 async def crm_middleware(request, handler):
-    if request.path not in {"/crm/discord/channels", "/crm/discord/promotions"}:
+    method = CRM_BROWSER_METHODS.get(request.path)
+    if method is None:
         return await handler(request)
+    origin = request.headers.get("Origin")
+    if origin is not None and origin not in CRM_BROWSER_ORIGINS:
+        return crm_error("Origem não autorizada.", 403)
+    if request.method == "OPTIONS":
+        if origin is None or request.headers.get("Access-Control-Request-Method") != method:
+            return crm_error("Método não autorizado.", 405)
+        return web.Response(status=204, headers={
+            "Access-Control-Allow-Methods": method,
+            "Access-Control-Allow-Headers": "Authorization, Content-Type",
+            "Access-Control-Max-Age": "600",
+        })
+    if request.method != method:
+        return crm_error("Método não autorizado.", 405)
     admin = await crm_admin(request)
     if isinstance(admin, web.Response):
         return admin
@@ -243,6 +276,9 @@ async def crm_session(app):
 
 app = web.Application(client_max_size=MAX_IMAGE_BASE64 + 32_768, middlewares=[crm_middleware])
 app.cleanup_ctx.append(crm_session)
+app.on_response_prepare.append(crm_response_headers)
+for path in CRM_BROWSER_METHODS:
+    app.router.add_route("OPTIONS", path, crm_channels)
 app.router.add_get('/crm/discord/channels', crm_channels)
 app.router.add_post('/crm/discord/promotions', crm_publish)
 app.router.add_get("/",health)
