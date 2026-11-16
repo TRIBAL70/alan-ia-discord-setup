@@ -2,6 +2,7 @@
 import os
 import logging
 import re
+from urllib.parse import urlsplit
 import discord
 from discord import app_commands
 
@@ -29,7 +30,7 @@ def server_only(interaction):
 @tree.command(name="ajuda",description="Ver comandos do Alan IA",guild=discord.Object(id=GUILD_ID))
 async def ajuda(interaction:discord.Interaction):
     await interaction.response.send_message(
-        "**Alan IA** 🤖\n/ajuda — comandos\n/perguntar — tirar dúvida com IA (exige chave da API)\n/ticket — abrir atendimento privado\n/fechar — encerrar ticket\n/ping — verificar funcionamento",
+        "**Alan IA** 🤖\n/ajuda — comandos\n/perguntar — tirar dúvida com IA (exige chave da API)\n/ticket — abrir atendimento privado\n/fechar — encerrar ticket\n/ping — verificar funcionamento\n/mensagem — montar mensagens com imagem ou GIF\n/boas-vindas — montar uma saudação personalizada",
         ephemeral=True)
 
 @tree.command(name="ping",description="Verificar se o bot está online",guild=discord.Object(id=GUILD_ID))
@@ -93,6 +94,218 @@ async def perguntar(interaction:discord.Interaction,pergunta:app_commands.Range[
     except Exception:
         logging.exception("Falha na API de IA")
         await interaction.followup.send("Serviço de IA temporariamente indisponível. Tente novamente.",ephemeral=True)
+
+
+_RICH_MESSAGE_COLORS = {
+    "azul": 0x00BFFF,
+    "ciano": 0x00DDEB,
+    "roxo": 0x8B40FF,
+    "verde": 0x39D98A,
+    "dourado": 0xD4AF37,
+}
+_IMAGE_SUFFIXES = {
+    "image/gif": "gif",
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+}
+_COLOR_CHOICES = [
+    app_commands.Choice(name=color.capitalize(), value=color)
+    for color in _RICH_MESSAGE_COLORS
+]
+
+
+async def enviar_mensagem(
+    interaction: discord.Interaction,
+    titulo: str | None,
+    texto: str | None,
+    arquivo: discord.Attachment | None,
+    link: str | None,
+    cor: str,
+    publicar: bool,
+    canal: discord.TextChannel | None,
+) -> None:
+    mentions = discord.AllowedMentions.none()
+    destino = canal or interaction.channel
+    bot = interaction.guild.me if interaction.guild else None
+
+    if not interaction.permissions.manage_messages:
+        await interaction.response.send_message(
+            "Você precisa da permissão Gerenciar Mensagens.", ephemeral=True
+        )
+        return
+    if publicar and (
+        not isinstance(destino, discord.TextChannel)
+        or bot is None
+        or not isinstance(interaction.user, discord.Member)
+        or not destino.permissions_for(interaction.user).view_channel
+        or not destino.permissions_for(interaction.user).manage_messages
+    ):
+        await interaction.response.send_message(
+            "Escolha um canal de texto em que você possa gerenciar mensagens.",
+            ephemeral=True,
+        )
+        return
+    if publicar:
+        permissoes = destino.permissions_for(bot)
+        if not (
+            permissoes.view_channel
+            and permissoes.send_messages
+            and permissoes.embed_links
+            and (arquivo is None or permissoes.attach_files)
+        ):
+            await interaction.response.send_message(
+                "Preciso de permissão para ver o canal, enviar mensagens e inserir "
+                "links. Para arquivos, também preciso de Anexar Arquivos.",
+                ephemeral=True,
+            )
+            return
+
+    titulo = titulo.strip() if titulo else None
+    texto = texto.strip() if texto else None
+    link = link.strip() if link else None
+    if not any((titulo, texto, arquivo, link)):
+        await interaction.response.send_message(
+            "Adicione um título, texto, imagem ou GIF.", ephemeral=True
+        )
+        return
+    if arquivo and link:
+        await interaction.response.send_message(
+            "Use um arquivo ou um link de imagem por mensagem.", ephemeral=True
+        )
+        return
+    if link:
+        try:
+            parsed = urlsplit(link)
+            valid_link = (
+                parsed.scheme == "https"
+                and parsed.hostname
+                and parsed.username is None
+                and parsed.password is None
+                and not any(char.isspace() for char in link)
+            )
+        except ValueError:
+            valid_link = False
+        if not valid_link:
+            await interaction.response.send_message(
+                "Use um link HTTPS direto para a imagem ou o GIF.", ephemeral=True
+            )
+            return
+
+    tipo = (arquivo.content_type or "").split(";", 1)[0] if arquivo else ""
+    if arquivo and (tipo not in _IMAGE_SUFFIXES or arquivo.size > 10 * 1024 * 1024):
+        await interaction.response.send_message(
+            "Anexe um GIF, PNG, JPG ou WebP de até 10 MiB.", ephemeral=True
+        )
+        return
+
+    embed = discord.Embed(
+        title=titulo, description=texto, color=_RICH_MESSAGE_COLORS[cor]
+    )
+    await interaction.response.defer(ephemeral=True, thinking=True)
+    imagem = None
+    try:
+        if arquivo:
+            nome = f"imagem.{_IMAGE_SUFFIXES[tipo]}"
+            imagem = await arquivo.to_file(filename=nome, description=arquivo.description)
+            embed.set_image(url=f"attachment://{nome}")
+        elif link:
+            embed.set_image(url=link)
+
+        argumentos = {"embed": embed, "allowed_mentions": mentions}
+        if imagem:
+            argumentos["file"] = imagem
+        if publicar:
+            await destino.send(**argumentos)
+        else:
+            await interaction.followup.send(ephemeral=True, **argumentos)
+    except discord.HTTPException as erro:
+        logging.warning("Falha no envio de mensagem personalizada (HTTP %s)", erro.status)
+        await interaction.followup.send(
+            "O Discord não conseguiu enviar a mensagem. Confira o arquivo, "
+            "o link e as permissões do canal.",
+            ephemeral=True,
+        )
+        return
+    finally:
+        if imagem is not None:
+            imagem.close()
+
+    if publicar:
+        await interaction.followup.send(
+            f"Mensagem publicada em {destino.mention}.", ephemeral=True
+        )
+
+
+@tree.command(
+    name="mensagem",
+    description="Monte uma mensagem com texto, imagem ou GIF",
+    guild=discord.Object(id=GUILD_ID),
+)
+@app_commands.default_permissions(manage_messages=True)
+@app_commands.choices(cor=_COLOR_CHOICES)
+@app_commands.describe(
+    titulo="Título da mensagem",
+    texto="Texto da mensagem (aceita Markdown)",
+    arquivo="Anexe uma imagem ou GIF animado",
+    link="Link HTTPS direto para uma imagem ou GIF",
+    cor="Cor da borda",
+    publicar="Sim para publicar. Sem marcar, só você vê a prévia.",
+    canal="Canal de publicação. Por padrão, usa o canal atual.",
+)
+async def mensagem(
+    interaction: discord.Interaction,
+    titulo: app_commands.Range[str, 1, 256] | None = None,
+    texto: app_commands.Range[str, 1, 4000] | None = None,
+    arquivo: discord.Attachment | None = None,
+    link: app_commands.Range[str, 1, 2048] | None = None,
+    cor: str = "ciano",
+    publicar: bool = False,
+    canal: discord.TextChannel | None = None,
+) -> None:
+    await enviar_mensagem(interaction, titulo, texto, arquivo, link, cor, publicar, canal)
+
+
+@tree.command(
+    name="boas-vindas",
+    description="Monte uma mensagem personalizada de boas-vindas",
+    guild=discord.Object(id=GUILD_ID),
+)
+@app_commands.default_permissions(manage_messages=True)
+@app_commands.choices(cor=_COLOR_CHOICES)
+@app_commands.describe(
+    membro="Membro saudado na mensagem. Por padrão, usa seu nome.",
+    titulo="Título do cartão de boas-vindas",
+    texto="Use {membro} e {servidor} para personalizar",
+    arquivo="Anexe uma imagem ou GIF animado",
+    link="Link HTTPS direto para uma imagem ou GIF",
+    cor="Cor da borda",
+    publicar="Sim para publicar. Sem marcar, só você vê a prévia.",
+    canal="Canal de publicação. Por padrão, usa o canal atual.",
+)
+async def boas_vindas(
+    interaction: discord.Interaction,
+    membro: discord.Member | None = None,
+    titulo: app_commands.Range[str, 1, 256] = "👋 Boas-vindas!",
+    texto: app_commands.Range[str, 1, 3800] = (
+        "Olá, **{membro}**! Boas-vindas ao **{servidor}**!\n"
+        "Conte o que você está aprendendo e compartilhe seus projetos com a comunidade."
+    ),
+    arquivo: discord.Attachment | None = None,
+    link: app_commands.Range[str, 1, 2048] | None = None,
+    cor: str = "roxo",
+    publicar: bool = False,
+    canal: discord.TextChannel | None = None,
+) -> None:
+    nome = discord.utils.escape_markdown((membro or interaction.user).display_name)
+    servidor = discord.utils.escape_markdown(interaction.guild.name)
+    texto = re.sub(
+        r"\{(membro|servidor)\}",
+        lambda token: nome if token[1] == "membro" else servidor,
+        texto,
+    )[:4096]
+    await enviar_mensagem(interaction, titulo, texto, arquivo, link, cor, publicar, canal)
+
 
 if __name__=="__main__":
     if not TOKEN:raise SystemExit("Configure DISCORD_BOT_TOKEN somente no ambiente seguro de execução.")
