@@ -15,6 +15,7 @@ from uuid import UUID
 import discord
 from aiohttp import ClientError, ClientSession, ClientTimeout, web
 from bot import GUILD_ID, TOKEN, _IMAGE_SUFFIXES, _RICH_MESSAGE_COLORS, client
+from welcome_cards import generate_member_card, welcome_channel
 
 logging.basicConfig(level=logging.INFO)
 async def health(request):
@@ -22,6 +23,8 @@ async def health(request):
         "service": "alan-ia",
         "discord_connected": bool(client.user and not client.is_closed()),
         "configured": bool(TOKEN),
+        "welcome_events": client.intents.members,
+        "welcome_channel_ready": welcome_channel(client.get_guild(GUILD_ID)) is not None,
         "notice": "Instâncias gratuitas podem suspender por inatividade."
     })
 
@@ -167,22 +170,22 @@ async def crm_welcome_member(request):
 
     guild = request["crm_guild"]
 
-    async def load_avatar():
+    async def load_media():
         member = await guild.fetch_member(int(user_id))
+        if payload.get("animated_card") is True:
+            return {"card_gif": base64.b64encode(await generate_member_card(member)).decode("ascii")}
         avatar = await member.display_avatar.with_size(256).with_format("png").read()
-        return member, avatar
+        return {"display_name": member.display_name, "avatar_png": base64.b64encode(avatar).decode("ascii")}
 
     try:
-        member, avatar = await asyncio.wait_for(load_avatar(), timeout=12)
+        media = await asyncio.wait_for(load_media(), timeout=35)
     except discord.NotFound:
         return crm_error("Não encontrei esse membro no servidor.", 404)
-    except (discord.DiscordException, ClientError, TimeoutError):
-        return crm_error("Não foi possível buscar o avatar. Tente novamente.", 502)
+    except (discord.DiscordException, ClientError, TimeoutError, ValueError, OSError):
+        logging.warning("Não foi possível preparar a mídia de boas-vindas.", exc_info=True)
+        return crm_error("Não foi possível gerar o cartão ou buscar o avatar. Tente novamente.", 502)
 
-    return web.json_response({
-        "display_name": member.display_name,
-        "avatar_png": base64.b64encode(avatar).decode("ascii"),
-    })
+    return web.json_response(media)
 
 
 async def crm_channels(request):

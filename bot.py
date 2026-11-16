@@ -5,24 +5,52 @@ import re
 from urllib.parse import urlsplit
 import discord
 from discord import app_commands
+from welcome_cards import get_background, send_member_welcome, welcome_channel
 
 logging.basicConfig(level=logging.INFO)
 TOKEN=os.getenv("DISCORD_BOT_TOKEN")
 GUILD_ID=1246627128074567680
 AI_KEY=os.getenv("OPENAI_API_KEY")
 AI_MODEL=os.getenv("OPENAI_MODEL","gpt-4.1-mini")
-intents=discord.Intents.default()
-client=discord.Client(intents=intents)
+class AlanClient(discord.Client):
+    async def setup_hook(self):
+        flags = self.application.flags
+        allowed = flags.gateway_guild_members or flags.gateway_guild_members_limited
+        # Client.intents returns a copy; the Gateway reads the state-bound flags.
+        self._connection._intents.members = allowed
+        if not allowed:
+            logging.warning("Boas-vindas automáticas aguardam Server Members Intent no Discord.")
+
+
+intents = discord.Intents.default()
+client = AlanClient(
+    intents=intents,
+    chunk_guilds_at_startup=False,
+)
 tree=app_commands.CommandTree(client)
 
 @client.event
+async def on_member_join(member):
+    if member.guild.id == GUILD_ID:
+        await send_member_welcome(member)
+
+
+@client.event
 async def on_ready():
+    channel = welcome_channel(client.get_guild(GUILD_ID))
+    logging.info("Boas-vindas: eventos=%s, canal=%s.", client.intents.members, channel is not None)
     guild=discord.Object(id=GUILD_ID)
     try:
         await tree.sync(guild=guild)
         print(f"Alan IA conectado como {client.user}; comandos sincronizados")
     except Exception:
         logging.exception("Erro ao sincronizar comandos")
+    if client.intents.members and channel is not None:
+        try:
+            await get_background()
+            logging.info("GIF de fundo das boas-vindas carregado.")
+        except Exception:
+            logging.exception("Não foi possível preparar o GIF das boas-vindas.")
 
 def server_only(interaction):
     return interaction.guild_id==GUILD_ID
