@@ -51,7 +51,9 @@ CRM_SUPABASE_URL = "https://kylriieztbcogpnsxgms.supabase.co"
 CRM_PUBLIC_KEY = os.environ.get("CRM_SUPABASE_PUBLISHABLE_KEY", "")
 HTTP_SESSION = web.AppKey("crm_http", ClientSession)
 MAX_IMAGE = 5 * 1024 * 1024
-MAX_IMAGE_BASE64 = 4 * ((MAX_IMAGE + 2) // 3)
+MAX_VIDEO = 20 * 1024 * 1024
+MAX_ATTACHMENT_BASE64 = 4 * ((MAX_VIDEO + 2) // 3)
+VIDEO_SUFFIXES = {"video/mp4": "mp4", "video/quicktime": "mov", "video/webm": "webm"}
 ID_PATTERN = re.compile(r"[0-9]{17,20}")
 
 
@@ -198,36 +200,55 @@ async def crm_channels(request):
     return web.json_response({"channels": channels})
 
 
-def promotion_attachment(data):
-    if not isinstance(data, dict):
-        raise ValueError("Escolha um arquivo de imagem válido.")
-    mime, encoded = data.get("mime"), data.get("data")
-    if not isinstance(mime, str) or mime not in _IMAGE_SUFFIXES:
-        raise ValueError("Use um arquivo GIF, PNG, JPG ou WebP.")
-    if not isinstance(encoded, str) or len(encoded) > MAX_IMAGE_BASE64:
-        raise ValueError("O arquivo deve ter até 5 MiB.")
-    try:
-        raw = base64.b64decode(encoded, validate=True)
-    except (ValueError, binascii.Error) as exc:
-        raise ValueError("O arquivo enviado está inválido.") from exc
-    if len(raw) > MAX_IMAGE:
-        raise ValueError("O arquivo deve ter até 5 MiB.")
+def attachment_matches_mime(mime, raw):
+    if mime in VIDEO_SUFFIXES:
+        if mime == "video/webm":
+            return raw.startswith(b"\x1a\x45\xdf\xa3") and b"webm" in raw[:128]
+        box = raw[4:8]
+        size = int.from_bytes(raw[:4], "big") if len(raw) >= 8 else 0
+        if len(raw) >= 12 and box == b"ftyp":
+            return True
+        return (
+            mime == "video/quicktime"
+            and (size == 1 or size >= 8)
+            and box in (b"moov", b"mdat", b"wide", b"free")
+        )
     signatures = {
         "image/gif": raw.startswith((b"GIF87a", b"GIF89a")),
         "image/jpeg": raw.startswith(b"\xff\xd8\xff"),
         "image/png": raw.startswith(b"\x89PNG\r\n\x1a\n"),
         "image/webp": raw.startswith(b"RIFF") and raw[8:12] == b"WEBP",
     }
-    if not signatures[mime]:
-        raise ValueError("O arquivo não corresponde a uma imagem no formato indicado.")
-    return raw, f"promocao.{_IMAGE_SUFFIXES[mime]}"
+    return signatures[mime]
 
+
+def promotion_attachment(data):
+    if not isinstance(data, dict):
+        raise ValueError("Escolha uma imagem, GIF ou vídeo válido.")
+    mime, encoded = data.get("mime"), data.get("data")
+    if not isinstance(mime, str) or mime not in (_IMAGE_SUFFIXES | VIDEO_SUFFIXES):
+        raise ValueError("Use PNG, JPG, WebP, GIF, MP4, MOV ou WebM.")
+    is_video = mime in VIDEO_SUFFIXES
+    limit = MAX_VIDEO if is_video else MAX_IMAGE
+    limit_label = "20 MiB" if is_video else "5 MiB"
+    if not isinstance(encoded, str) or len(encoded) > 4 * ((limit + 2) // 3):
+        raise ValueError(f"O arquivo deve ter até {limit_label}.")
+    try:
+        raw = base64.b64decode(encoded, validate=True)
+    except (ValueError, binascii.Error) as exc:
+        raise ValueError("O arquivo enviado está inválido.") from exc
+    if len(raw) > limit:
+        raise ValueError(f"O arquivo deve ter até {limit_label}.")
+    if not attachment_matches_mime(mime, raw):
+        raise ValueError("O arquivo não corresponde ao formato indicado.")
+    suffix = VIDEO_SUFFIXES[mime] if is_video else _IMAGE_SUFFIXES[mime]
+    return raw, f"promocao.{suffix}", is_video
 
 async def crm_publish(request):
     try:
         payload = await request.json()
     except web.HTTPRequestEntityTooLarge:
-        return crm_error("O arquivo deve ter até 5 MiB.", 413)
+        return crm_error("O arquivo excede o limite de 20 MiB.", 413)
     except (ValueError, TypeError):
         return crm_error("Dados da promoção inválidos.", 400)
     if not isinstance(payload, dict):
@@ -261,7 +282,7 @@ async def crm_publish(request):
     if media_url and source is not None:
         return crm_error("Escolha um link ou um arquivo por promoção.", 400)
     if not (title or text or media_url or source is not None):
-        return crm_error("Inclua um título, texto, imagem ou GIF.", 400)
+        return crm_error("Inclua um título, texto, imagem, GIF ou vídeo.", 400)
     guild = request["crm_guild"]
     channel = guild.get_channel(int(channel_id))
     if not isinstance(channel, discord.TextChannel) or not can_publish(
@@ -286,15 +307,23 @@ async def crm_publish(request):
     if media_url:
         embed.set_image(url=media_url)
     if media_file:
-        raw, filename = media_file
+        raw, filename, is_video = media_file
         args["file"] = discord.File(BytesIO(raw), filename=filename)
-        embed.set_image(url=f"attachment://{filename}")
+        if is_video and not (title or text):
+            del args["embed"]
+        elif not is_video:
+            embed.set_image(url=f"attachment://{filename}")
 
+    timeout = 75 if media_file and media_file[2] else 20
     try:
-        message = await asyncio.wait_for(channel.send(**args), timeout=20)
+        message = await asyncio.wait_for(channel.send(**args), timeout=timeout)
     except discord.Forbidden:
-        return crm_error("O Alan IA não tem permissão para publicar nesse canal.", 403)
-    except (discord.HTTPException, TimeoutError):
+        return crm_error("O Alan Sky não tem permissão para publicar nesse canal.", 403)
+    except discord.HTTPException as error:
+        if error.status == 413 or error.code == 40005:
+            return crm_error("O Discord recusou o tamanho do arquivo. Escolha um vídeo menor.", 413)
+        return crm_error("Não foi possível confirmar o envio. Confira o canal antes de tentar novamente.", 502)
+    except TimeoutError:
         return crm_error("Não foi possível confirmar o envio. Confira o canal antes de tentar novamente.", 502)
     finally:
         if "file" in args:
@@ -309,7 +338,7 @@ async def crm_session(app):
         yield
 
 
-app = web.Application(client_max_size=MAX_IMAGE_BASE64 + 32_768, middlewares=[crm_middleware])
+app = web.Application(client_max_size=MAX_ATTACHMENT_BASE64 + 32_768, middlewares=[crm_middleware])
 app.cleanup_ctx.append(crm_session)
 app.on_response_prepare.append(crm_response_headers)
 for path in CRM_BROWSER_METHODS:
