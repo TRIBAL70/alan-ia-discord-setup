@@ -112,6 +112,7 @@ CRM_BROWSER_ORIGINS = {
 CRM_BROWSER_METHODS = {
     "/crm/discord/channels": "GET",
     "/crm/discord/promotions": "POST",
+    "/crm/discord/welcome-member": "POST",
 }
 
 
@@ -151,6 +152,37 @@ async def crm_middleware(request, handler):
     request["crm_admin"] = admin
     request["crm_guild"] = guild
     return await handler(request)
+
+
+async def crm_welcome_member(request):
+    try:
+        payload = await request.json()
+    except web.HTTPRequestEntityTooLarge:
+        return crm_error("Identificador de membro inválido.", 413)
+    except (ValueError, TypeError):
+        return crm_error("Identificador de membro inválido.", 400)
+    user_id = payload.get("user_id") if isinstance(payload, dict) else None
+    if not isinstance(user_id, str) or not ID_PATTERN.fullmatch(user_id):
+        return crm_error("Informe um ID de usuário do Discord.", 400)
+
+    guild = request["crm_guild"]
+
+    async def load_avatar():
+        member = await guild.fetch_member(int(user_id))
+        avatar = await member.display_avatar.with_size(256).with_format("png").read()
+        return member, avatar
+
+    try:
+        member, avatar = await asyncio.wait_for(load_avatar(), timeout=12)
+    except discord.NotFound:
+        return crm_error("Não encontrei esse membro no servidor.", 404)
+    except (discord.DiscordException, ClientError, TimeoutError):
+        return crm_error("Não foi possível buscar o avatar. Tente novamente.", 502)
+
+    return web.json_response({
+        "display_name": member.display_name,
+        "avatar_png": base64.b64encode(avatar).decode("ascii"),
+    })
 
 
 async def crm_channels(request):
@@ -281,6 +313,7 @@ for path in CRM_BROWSER_METHODS:
     app.router.add_route("OPTIONS", path, crm_channels)
 app.router.add_get('/crm/discord/channels', crm_channels)
 app.router.add_post('/crm/discord/promotions', crm_publish)
+app.router.add_post('/crm/discord/welcome-member', crm_welcome_member)
 app.router.add_get("/",health)
 app.router.add_get("/health",health)
 app.on_startup.append(startup)
