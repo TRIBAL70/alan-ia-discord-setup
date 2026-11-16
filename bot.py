@@ -10,6 +10,7 @@ from welcome_cards import get_background, send_member_welcome, welcome_channel
 logging.basicConfig(level=logging.INFO)
 TOKEN=os.getenv("DISCORD_BOT_TOKEN")
 GUILD_ID=1246627128074567680
+GUILD_NICKNAME = "Alan Sky"
 AI_KEY=os.getenv("OPENAI_API_KEY")
 AI_MODEL=os.getenv("OPENAI_MODEL","gpt-4.1-mini")
 class AlanClient(discord.Client):
@@ -37,8 +38,18 @@ async def on_member_join(member):
 
 @client.event
 async def on_ready():
-    channel = welcome_channel(client.get_guild(GUILD_ID))
+    server = client.get_guild(GUILD_ID)
+    channel = welcome_channel(server)
     logging.info("Boas-vindas: eventos=%s, canal=%s.", client.intents.members, channel is not None)
+    if server is not None and server.me is not None:
+        try:
+            bot_member = server.me
+            if bot_member.display_name != GUILD_NICKNAME:
+                await bot_member.edit(nick=GUILD_NICKNAME, reason="Nome solicitado para o bot da Irmandade")
+                bot_member = await server.fetch_member(bot_member.id)
+            logging.info("Nome de exibição do bot na Irmandade: %s.", bot_member.display_name)
+        except discord.HTTPException:
+            logging.exception("Não foi possível atualizar o nome de exibição na Irmandade.")
     guild=discord.Object(id=GUILD_ID)
     try:
         await tree.sync(guild=guild)
@@ -58,12 +69,12 @@ def server_only(interaction):
 @tree.command(name="ajuda",description="Ver comandos do Alan IA",guild=discord.Object(id=GUILD_ID))
 async def ajuda(interaction:discord.Interaction):
     await interaction.response.send_message(
-        "**Alan IA** 🤖\n/ajuda — comandos\n/perguntar — tirar dúvida com IA (exige chave da API)\n/ticket — abrir atendimento privado\n/fechar — encerrar ticket\n/ping — verificar funcionamento\n/mensagem — montar mensagens com imagem ou GIF\n/boas-vindas — montar uma saudação personalizada",
+        "**Alan Sky** 🤖\n/ajuda — comandos\n/perguntar — tirar dúvida com IA (exige chave da API)\n/ticket — abrir atendimento privado\n/fechar — encerrar ticket\n/ping — verificar funcionamento\n/mensagem — montar mensagens com imagem ou GIF\n/boas-vindas — montar uma saudação personalizada",
         ephemeral=True)
 
 @tree.command(name="ping",description="Verificar se o bot está online",guild=discord.Object(id=GUILD_ID))
 async def ping(interaction:discord.Interaction):
-    await interaction.response.send_message("🏓 Alan IA online!",ephemeral=True)
+    await interaction.response.send_message("🏓 Alan Sky online!",ephemeral=True)
 
 @tree.command(name="ticket",description="Criar atendimento privado",guild=discord.Object(id=GUILD_ID))
 @app_commands.describe(assunto="Descreva resumidamente sua solicitação")
